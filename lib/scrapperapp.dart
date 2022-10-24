@@ -1,39 +1,37 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:async';
+import 'package:console_bars/console_bars.dart';
 import 'package:web_scraper/web_scraper.dart';
 
 var pathFiles = "${Directory.current.path}\\domains\\";
 
 void start() {
-  readData().then((data) {
-    generateDataFileProcessed(data);
-  });
+  sleep(Duration(seconds: 5));
+  readData();
 }
 
-Future<Map> readData() async {
-  Map<String, List> domainsData = {};
+void readData() async {
   for (var i = 1; i <= 4; i++) {
-    var fileData = File("${pathFiles}serv_$i.txt");
+    var localFile = "${pathFiles}serv_$i.txt";
+    var fileData = File(localFile);
     Stream<String> lines =
         fileData.openRead().transform(utf8.decoder).transform(LineSplitter());
 
     String server = "";
-    List<String> dataDom = [];
+    List<String> domainsDataList = [];
     await for (var line in lines) {
       if (line.contains('server-')) {
         server = line;
       } else {
-        dataDom.add(line);
+        domainsDataList.add(line);
       }
     }
-    domainsData[server] = dataDom;
-    dataDom = [];
+    generateDataFileProcessed(domainsDataList, server);
   }
-  return domainsData;
 }
 
-void generateDataFileProcessed(Map data) async {
+void generateDataFileProcessed(List data, String server) async {
   Map<String, List> processedData = {
     'activated': [],
     'desactivated': [],
@@ -42,42 +40,41 @@ void generateDataFileProcessed(Map data) async {
   List<String> expireds = [];
   List<String> desactiveds = [];
   List<String> activeds = [];
+  var progressBar = FillingBar(total: data.length, desc: server, percentage: true);
 
-  for (var i in data.keys) {
-    for (var domain in data[i]) {
-      await gettingDataDomain(domain).then((resp) {
-        if (resp.contains('For Sale Domain:')) {
-          print('$domain - expired');
-          expireds.add('$domain - $resp');
-        } else {
-          switch (resp) {
-            case 'expired':
-              print('$domain - expired');
-              expireds.add('$domain - $resp');
-              break;
+  for (var domain in data) {
+    await gettingDataDomain(domain).then((resp) {
+      progressBar.increment();
+      if (resp.contains('For Sale Domain:')) {
+        expireds.add('$domain - $resp');
+      } else {
+        switch (resp) {
+          case 'expired':
+            expireds.add('$domain - $resp');
+            break;
 
-            case 'Service Unavailable':
-              print('$domain - desactived');
-              desactiveds.add('$domain - $resp');
-              break;
+          case 'Service Unavailable':
+            desactiveds.add('$domain - $resp');
+            break;
 
-            default:
-              print('$domain - actived');
-              activeds.add('$domain - $resp');
-          }
+          case 'DESATIVADO':
+            desactiveds.add('$domain - $resp');
+            break;
+
+          default:
+            activeds.add('$domain - $resp');
         }
-      });
-    }
+      }
+    });
   }
 
   processedData['activated'] = activeds;
   processedData['desactivated'] = desactiveds;
   processedData['expired'] = expireds;
 
-  writeFiles(processedData);
+  writeFiles(server, processedData);
 }
 
-// Future<String> gettingDataDomain(domain) async {
 Future<String> gettingDataDomain(String domain) async {
   String ret = "";
   try {
@@ -93,16 +90,17 @@ Future<String> gettingDataDomain(String domain) async {
   return ret;
 }
 
-void writeFiles(Map data) {
+void writeFiles(String server, Map data) {
   var processedFiles = '${pathFiles}processedFiles';
   for (var key in data.keys) {
-    String domainListAsString = "";
+    String domainListAsString =
+        "#COUNT - DOMAIN - TITLE DOAMIN - STATE | SERVER\n\n";
     int i = 0;
     for (var domain in data[key]) {
       domainListAsString += '#$i - $domain - $key\n';
       i++;
     }
-    File('$processedFiles\\${key}_len_$i.txt')
+    File('$processedFiles\\$server\\${key}_len_$i.txt')
         .writeAsString(domainListAsString);
   }
 }
